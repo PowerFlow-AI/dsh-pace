@@ -6,13 +6,41 @@ DeepSeek Harness 搜索与进度反馈插件：大仓库搜索加速，慢任务
 
 ## 安装
 
-已安装 [dsh-TUI](https://github.com/ccch1mneyyy/dsh-TUI)？在终端运行以下命令，即可为它安装 DSH Pace 的 [npm 包](https://www.npmjs.com/package/@powerflow-ai/dsh-pace)：
+按你使用的客户端选择一种安装方式。插件的完整 [npm 包名](https://www.npmjs.com/package/@powerflow-ai/dsh-pace) 是 `@powerflow-ai/dsh-pace`，需要 Node.js 22.19 或更高的 22.x 版本，或 Node.js 24 及以上。
+
+### DeepSeek Harness 桌面端
+
+1. 打开桌面端的「插件」面板，选择「安装第三方插件」。
+2. 在「包名或地址」里粘贴 `@powerflow-ai/dsh-pace`，点击「安装」并确认。
+3. 在已安装列表中确认 DSH Pace 已启用，然后重开桌面端，进入新会话。
+
+### dsh-TUI
+
+使用社区 [dsh-TUI](https://github.com/ccch1mneyyy/dsh-TUI) 时，在系统终端运行以下命令，然后重启 TUI。
 
 ```sh
 dsh plugin --profile dsh-tui add @powerflow-ai/dsh-pace
 ```
 
-重新启动 TUI 即可使用，无需配置。需要 Node.js 22.19 或更高的 22.x 版本，或 Node.js 24 及以上。若使用 DSH Desktop，可在 Plugins 面板选择本插件的本地源码目录并启用，再重开 Desktop。
+### 其他 DeepSeek Harness 用户
+
+插件按 profile（启动配置）安装。以 Web 用户为例，在终端执行以下命令，然后重新启动 Web 客户端。
+
+```sh
+dsh plugin --profile web add @powerflow-ai/dsh-pace
+```
+
+如果平时用 `dsh headless`，请把命令中的 `web` 换成 `headless`。自定义 profile 同样填写自己的启动配置名。
+
+### 用 npm 安装到自己的项目
+
+如果你在 Node.js 项目中集成 Harness，可以在项目根目录把插件加入依赖：
+
+```sh
+npm install @powerflow-ai/dsh-pace
+```
+
+这条命令只会将包加入当前项目。要让日常使用的 DSH 客户端加载 Pace，请按上面对应客户端的步骤启用它。
 
 ## 它会改变什么
 
@@ -27,7 +55,7 @@ Pace 减少的是无效搜索和前台空等，不会加快模型推理，也不
 
 ## 确认启用与卸载
 
-运行 `dsh --profile dsh-tui --dump-config`，应能看到 `- id: dsh-pace`。要验证实际行为，可以在新会话里让 **DSH 助手**用 Bash 执行 `grep -Rn cache_key .`：应看到 Pace 给出的拦截原因和替代建议。在普通终端里直接运行命令不会触发插件。
+终端用户运行 `dsh --profile dsh-tui --dump-config`（其他 profile 换成对应名称），应能看到 `- id: dsh-pace`。要验证实际行为，可以在新会话里让 **DSH 助手**用 Bash 执行 `grep -Rn cache_key .`：应看到 Pace 给出的拦截原因和替代建议。在普通终端里直接运行命令不会触发插件。
 
 卸载 TUI 插件后重启即可恢复原行为：
 
@@ -35,4 +63,4 @@ Pace 减少的是无效搜索和前台空等，不会加快模型推理，也不
 dsh plugin --profile dsh-tui remove @powerflow-ai/dsh-pace
 ```
 
-Desktop 用户可在 Plugins 面板停用或移除。若此前安装过本地旧包 `@local/dsh-pace` 或 `rg-search-reminder`，不要与新版同时启用。
+其他 CLI 用户把卸载命令中的 `dsh-tui` 换成安装时的 profile 名。桌面端用户可在「插件」面板停用或移除。通过 npm 添加项目依赖的用户，在项目根目录运行 `npm uninstall @powerflow-ai/dsh-pace`。若此前安装过本地旧包 `@local/dsh-pace` 或 `rg-search-reminder`，不要与新版同时启用。
