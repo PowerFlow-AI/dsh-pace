@@ -1,0 +1,3 @@
+- insert:
+    - id: dsh-pace
+      name: '@powerflow-ai/dsh-pace'
