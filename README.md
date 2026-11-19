@@ -6,7 +6,7 @@ DeepSeek Harness 搜索与进度反馈插件：大仓库搜索加速，慢任务
 
 ## 安装
 
-已有 DSH TUI 的用户可直接安装 [npm 包](https://www.npmjs.com/package/@powerflow-ai/dsh-pace)：
+已安装 [dsh-TUI](https://github.com/ccch1mneyyy/dsh-TUI)？在终端运行以下命令，即可为它安装 DSH Pace 的 [npm 包](https://www.npmjs.com/package/@powerflow-ai/dsh-pace)：
 
 ```sh
 dsh plugin --profile dsh-tui add @powerflow-ai/dsh-pace
