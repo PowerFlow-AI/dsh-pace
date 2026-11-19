@@ -65,4 +65,4 @@ Pace 减少的是无效搜索和前台空等，不会加快模型推理，也不
 dsh plugin --profile dsh-tui remove @powerflow-ai/dsh-pace
 ```
 
-其他 CLI 用户把卸载命令中的 `dsh-tui` 换成安装时的 profile 名。桌面端用户可在「插件」面板停用或移除。通过 npm 添加项目依赖的用户，在项目根目录运行 `npm uninstall @powerflow-ai/dsh-pace`。若此前安装过本地旧包 `@local/dsh-pace` 或 `rg-search-reminder`，不要与新版同时启用。
+其他 CLI 用户把卸载命令中的 `dsh-tui` 换成安装时的 profile 名。桌面端用户可在「插件」面板停用或移除。通过 npm 添加项目依赖的用户，在项目根目录运行 `npm uninstall @powerflow-ai/dsh-pace`。
