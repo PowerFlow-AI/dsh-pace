@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install release-check tools
+        run: |
+          npm install --global --no-audit --no-fund pnpm@11.22.0 @deepseek-ai/dsh@0.2.0-rc.2 @deepseek-harness-tui/dsh-tui@0.20.0
+          echo "DSH_TUI_DIR=$(npm root -g)/@deepseek-harness-tui/dsh-tui" >> "$GITHUB_ENV"
+      - name: Run full release checks
+        run: npm run check:release
