@@ -4,6 +4,8 @@ DeepSeek Harness 搜索与进度反馈插件：大仓库搜索加速，慢任务
 
 限制大范围搜索和前台长等待，提醒 agent 尽早反馈进展。
 
+[dsh-TUI](https://github.com/ccch1mneyyy/dsh-TUI) · 一个为 dsh-TUI 生态打造的插件
+
 ## 安装
 
 按你使用的客户端选择一种安装方式。插件的完整 [npm 包名](https://www.npmjs.com/package/@powerflow-ai/dsh-pace) 是 `@powerflow-ai/dsh-pace`，需要 Node.js 22.19 或更高的 22.x 版本，或 Node.js 24 及以上。
