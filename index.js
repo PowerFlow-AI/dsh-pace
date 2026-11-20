@@ -1,4 +1,4 @@
-import { broadPwshListing, isBroadPath, isPaceShell, longForegroundSleep } from './shell.js'
+import { broadPwshListing, catMayWaitForStdin, isBroadPath, isPaceShell, longForegroundSleep } from './shell.js'
 import { createRetryPolicy } from './retry.js'
 
 export const name = 'dsh-pace'
@@ -10,6 +10,7 @@ const policy = `## Pace：让下一步尽快可见
 
 const searchHint = 'Pace：递归搜索范围过大。先用 rg -n -F -- "字面量" 具体目录/；查正则时去掉 -F，并按需要用 -g 限定文件类型。'
 const waitHint = 'Pace：不要在前台先空等一分钟再查。现在先查看进程、日志或作业状态；必要时短等后再查。'
+const stdinHint = 'Pace：find 没有结果时，未加引号的 $(find ...) 会让 cat 失去文件参数并等待终端输入。先执行 file=$(find ... -print -quit)，确认 [ -n "$file" ] 后再用 cat -- "$file" 或 head -c 2000 "$file"。'
 
 function broadGrep(words, piped, pwsh) {
   const executable = pwsh ? /^(?:.*[\\/])?grep(?:\.exe)?$/i : /^(?:.*\/)?grep$/
@@ -45,7 +46,10 @@ export function guard(execution) {
   const cmd = execution?.arguments?.command
   if (!isPaceShell(execution?.name) || typeof cmd !== 'string') return
   const pwsh = execution.name === 'pwsh'
-  if (execution.arguments.run_in_background !== true && longForegroundSleep(cmd, pwsh)) return waitHint
+  if (execution.arguments.run_in_background !== true) {
+    if (longForegroundSleep(cmd, pwsh)) return waitHint
+    if (!pwsh && catMayWaitForStdin(cmd)) return stdinHint
+  }
   if (/[`\r\n]|<<|\$\(|(?:^|\s)#/.test(cmd)) return
   const unsupported = pwsh ? /[{}()]|<#|@["']/ : /\\/
   if (unsupported.test(cmd)) return

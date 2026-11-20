@@ -11,6 +11,7 @@ Pace 在 DSH 的 `bash` 和 `pwsh` 工具调用中检查简单命令。
 | 大范围递归搜索 | `grep -Rn key .`、递归 grep 指向至少四个目标，或 PowerShell 的 `Get-ChildItem -Recurse \| Select-String key` | 改搜具体目录，如 `rg -n key src/`。 |
 | 慢搜索重试 | 简单前台 `rg key .` 耗时 ≥60 秒或返回结构化超时，随后 15 分钟内，同一会话在同一工作目录重搜该关键词 | 中文关键词也适用，如 `rg -n -F -- "电价" .`。改搜子目录或用 `-t`、正向 `-g` 限定文件类型即可继续。 |
 | 前台空等 | 命令以至少 60 秒的 `sleep` 或 PowerShell `Start-Sleep` 开头 | 立即查看日志或作业状态。 |
+| `cat` 等待终端输入 | 简单前台 Bash 命令中的 `cat $(find …)`，且文件参数只来自未加引号的 `find` 命令替换 | 把查询结果存入变量，确认非空后以带引号的路径读文件。 |
 
 后台作业只提供提示，建议先用 `job_output(wait:false)` 查看进展。慢搜索记录仅存于会话内存中。规则只覆盖常见写法，不能用作 shell 安全边界。
 

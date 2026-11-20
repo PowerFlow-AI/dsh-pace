@@ -19,6 +19,32 @@ test('registers via effects and leaves other tools alone', () => {
   assert.equal(guard({ name: 'bash' }), undefined)
 })
 
+test('Bash guards the full Ollama command when cat could inherit terminal input', () => {
+  const command = 'ls -la ~/.ollama/models/blobs | head -30; echo; echo "=== manifest ==="; find ~/.ollama/models/manifests -type f | head; echo; cat $(find ~/.ollama/models/manifests -type f | head -1) | head -c 2000'
+  const exec = { name: 'bash', arguments: { command } }
+  assert.match(guard(exec), /cat 失去文件参数/)
+  assert.match(guard({ name: 'bash', arguments: { command: '/bin/cat -- $(/usr/bin/find "$HOME/a b" -type f -print -quit)' } }), /cat 失去文件参数/)
+  assert.equal(guard({ ...exec, arguments: { command, run_in_background: true } }), undefined)
+  assert.equal(guard({ ...exec, name: 'pwsh' }), undefined)
+})
+
+test('Bash leaves cat with explicit input and unsupported shell constructs alone', () => {
+  for (const command of [
+    'printf data | cat $(find . -type f -print -quit) | head',
+    'printf data |& cat $(find . -type f -print -quit)',
+    'cat $(find . -type f -print -quit) </dev/null | head',
+    'cat "$(find . -type f -print -quit)" | head',
+    'cat "$file" $(find . -type f -print -quit)',
+    'cat ./$(find . -type f -print -quit)',
+    'cat $(find . -type f -print -quit)suffix',
+    "echo 'text; cat $(find . -type f -print -quit) | head'",
+    'echo "$HOME" # ; cat $(find . -type f -print -quit)',
+    'if test -d data; then echo yes; cat $(find . -type f -print -quit); fi',
+    'test -n "$file" && cat $(find . -type f -print -quit)',
+    'cat $(find . -type f -print -quit) &',
+  ]) assert.equal(guard({ name: 'bash', arguments: { command } }), undefined, command)
+})
+
 test('slow retry is session-local, bypassed by narrowing, and expires', () => {
   let time = 0
   const retry = createRetryPolicy(() => time)
