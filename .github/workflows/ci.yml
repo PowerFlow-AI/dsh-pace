@@ -3,6 +3,8 @@ name: CI
 on:
   workflow_call:
     inputs:
+      source-sha:
+        type: string
       retain-package:
         type: boolean
         default: false
@@ -20,6 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.source-sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -46,6 +49,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.source-sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
