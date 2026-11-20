@@ -16,7 +16,7 @@ Pace 在 DSH 的 `bash` 和 `pwsh` 工具调用中检查简单命令。
 
 ## 安装与验证
 
-需要 Node.js 22.19+（22.x）或 ≥24。当前 `main` 的 PowerShell 修复可通过本地安装使用。
+需要 Node.js 22.19+（22.x）或 ≥24。PowerShell 拦截需要 Pace 0.1.1 或更高版本。
 
 - **桌面端**：在「插件」面板安装本地源码目录并启用，重启客户端。安装 npm 版时，在「安装第三方插件」中填写 `@powerflow-ai/dsh-pace`。
 - **dsh-TUI、Web 或 headless**：在终端运行以下命令，然后重启客户端。按需将 `dsh-tui` 换成自己的 profile 名。
