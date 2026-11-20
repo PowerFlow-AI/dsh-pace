@@ -1,0 +1,62 @@
+name: Stage npm release
+run-name: Stage ${{ github.ref_name }} for npm approval
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify tag, release manifests and README
+        run: |
+          git merge-base --is-ancestor HEAD origin/main
+          git diff --exit-code origin/main HEAD -- README.md
+          node --input-type=commonjs <<'JS'
+          const assert = require('node:assert/strict')
+          const pkg = require('./package.json')
+          assert.equal(pkg.name, '@powerflow-ai/dsh-pace')
+          assert.equal('v' + pkg.version, process.env.GITHUB_REF_NAME)
+          assert.equal(pkg.version, require('./dsh-plugin.json').version)
+          JS
+
+  checks:
+    needs: version
+    uses: ./.github/workflows/ci.yml
+    with:
+      retain-package: true
+
+  stage:
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Select npm CLI with staged publishing support
+        run: npm install --global --ignore-scripts npm@11.20.0
+      - uses: actions/download-artifact@v4
+        with:
+          name: tested-package
+          path: dist
+      - name: Submit verified tarball to npm for approval
+        run: |
+          archive="dist/powerflow-ai-dsh-pace-${GITHUB_REF_NAME#v}.tgz"
+          tar -xOf "$archive" package/README.md | cmp - README.md
+          sha512sum "$archive"
+          npm stage publish "$archive" --registry=https://registry.npmjs.org/ --access public --tag latest

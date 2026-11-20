@@ -1,6 +1,11 @@
 name: CI
 
 on:
+  workflow_call:
+    inputs:
+      retain-package:
+        type: boolean
+        default: false
   pull_request:
   push:
     branches: [main]
@@ -24,7 +29,16 @@ jobs:
           npm install --global --no-audit --no-fund pnpm@11.22.0 @deepseek-ai/dsh@0.2.0-rc.2 @deepseek-harness-tui/dsh-tui@0.20.0
           echo "DSH_TUI_DIR=$(npm root -g)/@deepseek-harness-tui/dsh-tui" >> "$GITHUB_ENV"
       - name: Run full release checks
+        env:
+          DSH_PACE_RELEASE_DIR: ${{ inputs.retain-package && runner.temp || '' }}
         run: npm run check:release
+      - uses: actions/upload-artifact@v4
+        if: inputs.retain-package
+        with:
+          name: tested-package
+          path: ${{ runner.temp }}/powerflow-ai-dsh-pace-*.tgz
+          if-no-files-found: error
+          retention-days: 7
 
   windows-pwsh:
     runs-on: windows-latest

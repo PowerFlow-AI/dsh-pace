@@ -22,16 +22,26 @@ function searchKey(exec) {
   if (!search) return
   const words = search.args.match(/'[^']*'|"[^"]*"|[^\s]+/g) ?? []
   const operands = []
+  let options = true
   for (let index = 0; index < words.length; index++) {
     const word = words[index]
-    if (word === '-g' || word === '--glob') {
-      if (!/^['"]?![\w.*\/-]+['"]?$/.test(words[++index] ?? '')) return
-    } else if (!/^(?:--hidden|-[nFilH]+)$/.test(word)) {
-      const value = word.replace(/^['"]|['"]$/g, '')
-      const currentDirectory = pwsh && operands.length === 1 && value === '.\\'
-      if (!currentDirectory && (!/^(?:'[\w./ :+-]+'|"[\w./ :+-]+"|[\w./:+-]+)$/.test(word) || word.startsWith('-'))) return
-      operands.push(currentDirectory ? '.' : value)
+    if (options && word === '--') {
+      options = false
+      continue
     }
+    if (options && (word === '-g' || word === '--glob')) {
+      if (!/^['"]?![\p{L}\p{M}\p{N}_.*\/-]+['"]?$/u.test(words[++index] ?? '')) return
+      continue
+    }
+    if (options && /^(?:--hidden|-[nFilH]+)$/.test(word)) continue
+
+    const value = word.replace(/^['"]|['"]$/g, '')
+    const currentDirectory = pwsh && operands.length === 1 && value === '.\\'
+    if (!currentDirectory) {
+      if (options && value.startsWith('-')) return
+      if (!/^(?:'[\p{L}\p{M}\p{N}_./ :+-]+'|"[\p{L}\p{M}\p{N}_./ :+-]+"|[\p{L}\p{M}\p{N}_./:+-]+)$/u.test(word)) return
+    }
+    operands.push(currentDirectory ? '.' : value)
   }
   if (!operands.length || operands.length > 2) return
   const [pattern, target = '.'] = operands

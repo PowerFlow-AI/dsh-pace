@@ -32,9 +32,9 @@ try {
     assert.equal(refused.isError, true)
     assert.match(JSON.stringify(refused.content), /Pace/)
   }
-  const slow = await invoke('rg needle .', 1)
+  const slow = await invoke('rg -n -F -- "节点电价" .', 1)
   assert.equal(slow.value?.timedOut, true, JSON.stringify(slow))
-  const retry = await invoke('rg needle .')
+  const retry = await invoke('rg -- "节点电价" .')
   assert.equal(retry.isError, true)
   assert.match(JSON.stringify(retry.content), /Pace/)
   console.log('PASS: DSH pwsh command, foreground guards and timeout retry')

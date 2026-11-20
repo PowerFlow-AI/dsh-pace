@@ -100,3 +100,23 @@ test('pwsh slow searches use the foreground session, directory, keyword and expi
   now = 900_000
   assert.equal(retry.guard(search), undefined)
 })
+
+for (const name of ['bash', 'pwsh']) {
+  test(`${name}: slow rg retries recognize Unicode keywords and the end of options`, () => {
+    const retry = createRetryPolicy()
+    const exec = command => ({ name, arguments: { command }, agent: { id: 'one' } })
+    for (const keyword of ['节点电价', '昨日 电价', 'needle', '-i']) {
+      const first = exec(`rg -n -F -- "${keyword}" .`)
+      assert.equal(retry.guard(first), undefined)
+      retry.observe(first, 60_000, false)
+      assert.ok(retry.guard(exec(`rg -- "${keyword}" .`)))
+      assert.equal(retry.guard(exec(`rg -- "${keyword}" src`)), undefined)
+      assert.equal(retry.guard(exec(`rg -t js -- "${keyword}" .`)), undefined)
+      assert.equal(retry.guard(exec(`rg -g "*.js" -- "${keyword}" .`)), undefined)
+    }
+    assert.ok(retry.guard(exec('rg 节点电价 .')))
+    assert.equal(retry.guard(exec('rg -i .')), undefined)
+    assert.equal(retry.guard(exec('rg -- "节点$变量" .')), undefined)
+    assert.equal(retry.guard(exec('rg 其他关键词 .')), undefined)
+  })
+}

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { copyFileSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -79,6 +79,9 @@ try {
   assert.ok(!config().includes('- id: dsh-pace'))
   console.log('PASS: DSH CLI install / compose / uninstall in isolated DSH_HOME')
   console.log('PASS: packed files, offline install, pinned parser/core, host attach/dispose/reload')
+  if (process.env.DSH_PACE_RELEASE_DIR) {
+    copyFileSync(archive, join(process.env.DSH_PACE_RELEASE_DIR, pack.filename))
+  }
   console.log('Host', read(join(host, 'package.json')).version, 'TUI parser source', read(join(tui, 'package.json')).version, pack.filename, 'sha256', hash(archive))
 } finally {
   rmSync(tmp, { recursive: true, force: true })
