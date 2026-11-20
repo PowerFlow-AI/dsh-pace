@@ -21,7 +21,7 @@ try {
   assert.equal(hash(parser), '1041a84e010c5b6924d9d921e82719a63a54ae2a697d041de24c5a32b2ae6dce', 'unreviewed manifest parser')
   assert.equal(hash(createRequire(parser).resolve('@dsh-std/core')), 'd6b5ad3cb888abe6c04782e8715bcdfdbd623d89b532849776724f124f2fc45f', 'unreviewed manifest parser dependency')
   const [pack] = JSON.parse(run('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', tmp], root))
-  const expected = ['README.md', 'LICENSE', 'index.js', 'retry.js', 'pace.test.js', 'package.json', 'cordis.patch.yml', 'dsh-plugin.json', 'locale/en.json', 'locale/zh.json', 'icon.svg', 'scripts/check-manifest.mjs', 'scripts/check-release.mjs', 'scripts/replay.mjs']
+  const expected = ['README.md', 'CHANGELOG.md', 'shell.js', 'LICENSE', 'index.js', 'retry.js', 'pace.test.js', 'package.json', 'cordis.patch.yml', 'dsh-plugin.json', 'locale/en.json', 'locale/zh.json', 'icon.svg', 'scripts/check-manifest.mjs', 'scripts/check-release.mjs', 'scripts/replay.mjs']
   assert.deepEqual(pack.files.map(file => file.path).sort(), expected.sort())
   const archive = join(tmp, pack.filename)
   run('npm', ['install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', '--prefix', tmp, archive], tmp)

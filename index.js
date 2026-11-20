@@ -1,3 +1,4 @@
+import { broadPwshListing, isBroadPath, isPaceShell, longForegroundSleep } from './shell.js'
 import { createRetryPolicy } from './retry.js'
 
 export const name = 'dsh-pace'
@@ -7,11 +8,12 @@ const policy = `## Pace：让下一步尽快可见
 先回答用户要判断的事；侦查先查已知文件，再按目录、类型扩展。优先 rg / 工作区搜索；rg --hidden 从根目录扫也可能很慢。不要把 head 当作搜索超时。
 慢任务先报启动状态。job_output 先用 wait:false 查看现状；确需等时用 wait:true、timeout_ms:5000，不连续轮询，保留作业等完成通知。一次查不到就报告已知事实和下一步。长命令按可验证的步骤拆开；复杂脚本用文件，保留必要的事务与清理。`
 
-const searchHint = 'Pace：递归 grep 范围过大。先用 rg -n -F -- "字面量" 具体目录/；查正则时去掉 -F，并按需要用 -g 限定文件类型。'
+const searchHint = 'Pace：递归搜索范围过大。先用 rg -n -F -- "字面量" 具体目录/；查正则时去掉 -F，并按需要用 -g 限定文件类型。'
 const waitHint = 'Pace：不要在前台先空等一分钟再查。现在先查看进程、日志或作业状态；必要时短等后再查。'
 
-function broadGrep(words, piped) {
-  if (!/^(?:.*\/)?grep$/.test(words[0])) return false
+function broadGrep(words, piped, pwsh) {
+  const executable = pwsh ? /^(?:.*[\\/])?grep(?:\.exe)?$/i : /^(?:.*\/)?grep$/
+  if (!executable.test(words[0])) return false
   let recursive = false, pattern = false, options = true
   const paths = []
   for (let index = 1; index < words.length; index++) {
@@ -36,26 +38,30 @@ function broadGrep(words, piped) {
     } else if (!pattern) pattern = true
     else paths.push(word)
   }
-  return recursive && ((!paths.length && !piped) || paths.length >= 4 || paths.some(path => /^(?:\.|\.\.|~|\$PWD|\$HOME|\*)\/?$/.test(path) || path === '/'))
+  return recursive && ((!paths.length && !piped) || paths.length >= 4 || paths.some(path => isBroadPath(path, pwsh)))
 }
 
 export function guard(execution) {
   const cmd = execution?.arguments?.command
-  if (execution?.name !== 'bash' || typeof cmd !== 'string') return
-  const sleep = cmd.match(/^\s*(?:\/bin\/)?sleep\s+(\d+(?:\.\d+)?)([smh]?)\s*(?:$|;|&&)/)
-  if (sleep && execution.arguments.run_in_background !== true) {
-    const [, amount, unit] = sleep
-    if (Number(amount) * ({ m: 60, h: 3600 }[unit] ?? 1) >= 60) return waitHint
-  }
-  if (/[`\\\n]|<<|\$\(|(?:^|\s)#/.test(cmd)) return
-  const tokens = cmd.match(/\d*>\s*\/dev\/null(?=\s|[;|&]|$)|(?:'[^']*'|"[^"]*"|[^\s;&|'"<>])+|&&|\|\||[;|&]|[^\s]/g) ?? []
-  let words = [], piped = false
+  if (!isPaceShell(execution?.name) || typeof cmd !== 'string') return
+  const pwsh = execution.name === 'pwsh'
+  if (execution.arguments.run_in_background !== true && longForegroundSleep(cmd, pwsh)) return waitHint
+  if (/[`\r\n]|<<|\$\(|(?:^|\s)#/.test(cmd)) return
+  const unsupported = pwsh ? /[{}()]|<#|@["']/ : /\\/
+  if (unsupported.test(cmd)) return
+  const tokens = cmd.match(/\d*>\s*(?:\/dev\/null|\$null)(?=\s|[;|&]|$)|(?:'[^']*'|"[^"]*"|[^\s;&|'"<>])+|&&|\|\||[;|&]|[^\s]/g) ?? []
+  let words = []
+  let piped = false
+  let broadListing = false
   for (const token of [...tokens, ';']) {
     if ([';', '|', '&', '&&', '||'].includes(token)) {
-      while (['time', 'command', 'sudo', 'nohup', 'env'].includes(words[0]) || /^\w+=/.test(words[0] ?? '')) words.shift()
-      if (broadGrep(words, piped)) return searchHint
+      while (!pwsh && (['time', 'command', 'sudo', 'nohup', 'env'].includes(words[0]) || /^\w+=/.test(words[0] ?? ''))) words.shift()
+      if (broadGrep(words, piped, pwsh)) return searchHint
+      if (broadListing && /^(?:Select-String|sls)$/i.test(words[0])) return searchHint
+      broadListing = pwsh && !piped && token === '|' && broadPwshListing(words)
       words = []; piped = token === '|'
-    } else if (!/^\d*>\s*\/dev\/null$/.test(token)) {
+    } else if (!/^\d*>\s*\/dev\/null$/.test(token) && !(pwsh && /^\d*>\s*\$null$/.test(token))) {
+      if (pwsh && words.length === 0) { words.push(token); continue }
       words.push(token === '"*"' || /^'(?:\*|\$PWD|\$HOME|~)'$/.test(token) ? '<literal>' : token.replace(/['"]/g, ''))
     }
   }
@@ -65,7 +71,7 @@ export function apply(ctx) {
   const retry = createRetryPolicy()
   ctx.on('session/disposed', session => retry.disposeSession(session))
   ctx.on('tools/execute', async (exec, next) => {
-    if (exec.name !== 'bash') return next()
+    if (!isPaceShell(exec.name)) return next()
     const start = performance.now()
     const result = await next()
     retry.observe(exec, performance.now() - start, result?.value?.timedOut === true || result?.error?.info?.code === 'TOOL_TIMEOUT')

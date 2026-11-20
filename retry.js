@@ -1,26 +1,42 @@
+import { isPaceShell } from './shell.js'
+
+function bashSearch(command) {
+  if (command.includes('\\')) return
+  const prefix = command.match(/^cd\s+([\w./-]+)\s*&&\s*/)
+  const body = command.slice(prefix?.[0].length ?? 0).replace(/^command -v rg\s*(?:&&\s*rg --version\s*\|\s*head -1\s*&&|\|\|\s*true;)\s*/, '')
+  const match = body.match(/^(?:time\s+)?(?:[\w./-]+\/)?rg\s+(.+)$/)
+  if (match) return { directory: prefix?.[1] ?? '.', args: match[1].replace(/\s*\|\s*(?:wc -l|head(?: -\d+| -n \d+)?)$/, '') }
+}
+
+function pwshSearch(command) {
+  // DSH passes the working directory separately. Only match a direct rg call.
+  const match = command.match(/^(?:[\w.:/\\-]+[/\\])?rg(?:\.exe)?\s+(.+)$/i)
+  if (match) return { directory: '.', args: match[1] }
+}
+
 function searchKey(exec) {
   const cmd = exec.arguments?.command
-  if (exec.name !== 'bash' || !exec.agent?.id || typeof cmd !== 'string' || cmd.length > 4096 || exec.arguments.run_in_background || /[\n`$<>\\]/.test(cmd)) return
-  const prefix = cmd.trim().match(/^cd\s+([\w./-]+)\s*&&\s*/)
-  const body = cmd.trim().slice(prefix?.[0].length ?? 0).replace(/^command -v rg\s*(?:&&\s*rg --version\s*\|\s*head -1\s*&&|\|\|\s*true;)\s*/, '')
-  const match = body.match(/^(?:time\s+)?(?:[\w./-]+\/)?rg\s+(.+)$/)
-  if (!match) return
-  const args = match[1].replace(/\s*\|\s*(?:wc -l|head(?: -\d+| -n \d+)?)$/, '')
-  const words = args.match(/'[^']*'|"[^"]*"|[^\s]+/g) ?? []
+  if (!isPaceShell(exec.name) || !exec.agent?.id || typeof cmd !== 'string' || cmd.length > 4096 || exec.arguments.run_in_background || /[\r\n`$<>]/.test(cmd)) return
+  const pwsh = exec.name === 'pwsh'
+  const search = pwsh ? pwshSearch(cmd.trim()) : bashSearch(cmd.trim())
+  if (!search) return
+  const words = search.args.match(/'[^']*'|"[^"]*"|[^\s]+/g) ?? []
   const operands = []
   for (let index = 0; index < words.length; index++) {
     const word = words[index]
     if (word === '-g' || word === '--glob') {
       if (!/^['"]?![\w.*\/-]+['"]?$/.test(words[++index] ?? '')) return
     } else if (!/^(?:--hidden|-[nFilH]+)$/.test(word)) {
-      if (!/^(?:'[\w./ :+-]+'|"[\w./ :+-]+"|[\w./:+-]+)$/.test(word) || word.startsWith('-')) return
-      operands.push(word.replace(/^['"]|['"]$/g, ''))
+      const value = word.replace(/^['"]|['"]$/g, '')
+      const currentDirectory = pwsh && operands.length === 1 && value === '.\\'
+      if (!currentDirectory && (!/^(?:'[\w./ :+-]+'|"[\w./ :+-]+"|[\w./:+-]+)$/.test(word) || word.startsWith('-'))) return
+      operands.push(currentDirectory ? '.' : value)
     }
   }
   if (!operands.length || operands.length > 2) return
   const [pattern, target = '.'] = operands
   if (target !== '.' && target !== './') return
-  return JSON.stringify([exec.agent.id, exec.arguments.workdir ?? exec.agent.cwd ?? '', prefix?.[1] ?? '.', pattern])
+  return JSON.stringify([exec.agent.id, exec.arguments.workdir ?? exec.agent.session?.header?.cwd ?? exec.agent.cwd ?? '', search.directory, pattern])
 }
 
 export function createRetryPolicy(clock = Date.now) {

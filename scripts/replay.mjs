@@ -3,6 +3,7 @@ import { once } from 'node:events'
 import { glob, realpath } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
 import { createInterface } from 'node:readline'
+import { isPaceShell } from '../shell.js'
 import { guard } from '../index.js'
 import { createRetryPolicy } from '../retry.js'
 
@@ -13,7 +14,7 @@ for await (const path of glob('*/.dsh/sessions/*/*/session*.zstd', { cwd: root }
   if (!files.has(dirname(path)) || path > files.get(dirname(path))) files.set(dirname(path), path)
 }
 if (!files.size) throw Error('No DSH sessions found')
-const counts = { sessions: 0, bash: 0, jobs: 0, grep: 0, sleep: 0, retry: 0, longWaitAdvice: 0 }
+const counts = { sessions: 0, bash: 0, pwsh: 0, jobs: 0, grep: 0, sleep: 0, retry: 0, longWaitAdvice: 0 }
 for (const path of [...files.values()].sort()) {
   const child = spawn('zstd', ['-dcq', '--', path], { cwd: root, stdio: ['ignore', 'pipe', 'inherit'] })
   const exit = once(child, 'close')
@@ -25,22 +26,22 @@ for (const path of [...files.values()].sort()) {
     if (type === 'session' && !parentSession && !delegationDepth) { agent = { id, cwd }; counts.sessions++ }
     if (!agent) continue
     now = time
-    if (type === 'tool/call' && ['bash', 'job_output'].includes(data.name)) {
+    if (type === 'tool/call' && (isPaceShell(data.name) || data.name === 'job_output')) {
       let args = data.arguments
       try { if (typeof args === 'string') args = JSON.parse(args) } catch { continue }
       const exec = { name: data.name, arguments: args, agent }
       const hint = guard(exec)
       let rule
-      if (exec.name === 'bash') counts.bash++
+      if (isPaceShell(exec.name)) counts[exec.name]++
       else counts.jobs++
-      if (hint) rule = hint.includes('grep') ? 'grep' : 'sleep'
+      if (hint) rule = hint.includes('递归搜索') ? 'grep' : 'sleep'
       else if (retry.guard(exec)) rule = 'retry'
       else if (exec.name === 'job_output' && args?.wait === true && (args.timeout_ms ?? Infinity) > 5000) rule = 'longWaitAdvice'
       if (rule) {
         counts[rule]++
         if (process.argv.includes('--examples')) console.log(path.split('/')[0], basename(dirname(path)), seq, rule)
       }
-      if (exec.name === 'bash' && !rule) pending.set(data.callId, { exec, time })
+      if (isPaceShell(exec.name) && !rule) pending.set(data.callId, { exec, time })
     } else if (type === 'tool/result') {
       const msg = data.message
       const key = msg?.toolCallId ?? msg?.source?.callId

@@ -25,3 +25,21 @@ jobs:
           echo "DSH_TUI_DIR=$(npm root -g)/@deepseek-harness-tui/dsh-tui" >> "$GITHUB_ENV"
       - name: Run full release checks
         run: npm run check:release
+
+  windows-pwsh:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Exercise the DSH PowerShell tool
+        shell: pwsh
+        run: |
+          npm install --global --no-audit --no-fund @deepseek-ai/dsh@0.2.0-rc.2
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $env:DSH_HOST_DIR = Join-Path (npm root -g) '@deepseek-ai/dsh'
+          node .github/scripts/check-pwsh.mjs

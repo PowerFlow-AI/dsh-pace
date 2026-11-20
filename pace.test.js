@@ -60,3 +60,43 @@ test('host middleware passes through results and guards only the matching foregr
   for (const args of [{ workdir: '/two' }, { run_in_background: true }, { command: 'sleep 90', run_in_background: true }]) assert.equal(check({ ...exec, arguments: { ...exec.arguments, ...args } }), undefined)
   assert.equal(check({ name: 'job_output', arguments: { wait: true, timeout_ms: 180000 } }), undefined)
 })
+
+test('pwsh recognizes broad searches and long foreground waits', () => {
+  for (const command of [
+    'grep -Rn key .', 'C:\\bin\\GREP.EXE -r key .\\', 'grep -r key a b c d',
+    'Get-ChildItem -Path .\\ -File -Recurse | Select-String key',
+    'gci -recurse | sls key', 'sleep 60', 'START-SLEEP -Seconds 60; Get-Process',
+    'Start-Sleep -Milliseconds 60000', 'Start-Sleep -ms 60000', 'sleep 60\r\nGet-Process',
+  ]) assert.ok(guard({ name: 'pwsh', arguments: { command } }), command)
+})
+
+test('pwsh leaves scoped searches, literal text, scripts and short or background sleeps alone', () => {
+  for (const command of [
+    'grep -Rn key .\\src', 'grep -Rn key .\\src 2>$null', 'grep -n key .',
+    'Get-ChildItem -Recurse src | Select-String key',
+    'gci -Filter *.js -Recurse | sls key', 'gci -Recurse | Select-Object Name',
+    'Get-Item src | gci -Recurse | sls key',
+    'Write-Output "a; grep -Rn key .; sleep 60"', "'Start-Sleep 60'", 'Write-Output ok # grep -Rn key .',
+    "Get-Job | ForEach-Object { grep -Rn key . }", "@'\ngrep -Rn key .\n'@",
+    'Start-Sleep -Milliseconds 59999', 'sleep 59', 'Start-Sleep 120 &', 'Start-Sleep $seconds',
+  ]) assert.equal(guard({ name: 'pwsh', arguments: { command } }), undefined, command)
+  assert.equal(guard({ name: 'pwsh', arguments: { command: 'Start-Sleep 60', run_in_background: true } }), undefined)
+})
+
+test('pwsh slow searches use the foreground session, directory, keyword and expiry', () => {
+  let now = 0
+  const retry = createRetryPolicy(() => now)
+  const exec = (command, args) => ({ name: 'pwsh', agent: { id: 'a' }, arguments: { command, workdir: 'C:\\repo', ...args } })
+  const search = exec('C:\\bin\\RG.EXE --hidden needle .\\')
+  retry.observe(search, 59_999, false)
+  assert.equal(retry.guard(search), undefined)
+  retry.observe(search, 60_000, false)
+  assert.ok(retry.guard(exec('rg needle')))
+  for (const command of ['rg needle .\\src', 'rg needle -t js', 'rg -g "*.js" needle .', 'rg different .', "Write-Output 'rg needle .'"]) {
+    assert.equal(retry.guard(exec(command)), undefined, command)
+  }
+  assert.equal(retry.guard(exec('rg needle .', { workdir: 'D:\\repo' })), undefined)
+  assert.equal(retry.guard(exec('rg needle .', { run_in_background: true })), undefined)
+  now = 900_000
+  assert.equal(retry.guard(search), undefined)
+})

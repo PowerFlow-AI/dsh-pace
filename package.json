@@ -26,6 +26,7 @@
   "files": [
     "index.js",
     "retry.js",
+    "shell.js",
     "pace.test.js",
     "scripts/check-release.mjs",
     "scripts/check-manifest.mjs",
@@ -34,7 +35,8 @@
     "dsh-plugin.json",
     "locale/*.json",
     "icon.svg",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "test": "node --test",
