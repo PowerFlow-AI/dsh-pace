@@ -27,7 +27,7 @@ try {
   await ctx.plugin(pace)
   const ready = await invoke("Start-Sleep -Milliseconds 1; Write-Output 'ready'")
   assert.equal(ready.value?.stdout.text.trim(), 'ready', JSON.stringify(ready))
-  for (const command of ['Start-Sleep -Seconds 60', 'grep -Rn needle .', 'Get-ChildItem -Recurse | Select-String needle']) {
+  for (const command of ['Start-Sleep -Seconds 60', 'grep -Rn needle .', "Get-ChildItem -Recurse | Select-String 'a(b)'"]) {
     const refused = await invoke(command)
     assert.equal(refused.isError, true)
     assert.match(JSON.stringify(refused.content), /Pace/)

@@ -1,4 +1,4 @@
-import { broadPwshListing, catMayWaitForStdin, isBroadPath, isPaceShell, longForegroundSleep } from './shell.js'
+import { broadPwshListing, catMayWaitForStdin, isBroadPath, isPaceShell, longForegroundSleep, searchTokens, wordValue } from './shell.js'
 import { createRetryPolicy } from './retry.js'
 
 export const name = 'dsh-pace'
@@ -12,13 +12,17 @@ const searchHint = 'Pace：递归搜索范围过大。先用 rg -n -F -- "字面
 const waitHint = 'Pace：不要在前台先空等一分钟再查。现在先查看进程、日志或作业状态；必要时短等后再查。'
 const stdinHint = 'Pace：find 没有结果时，未加引号的 $(find ...) 会让 cat 失去文件参数并等待终端输入。先执行 file=$(find ... -print -quit)，确认 [ -n "$file" ] 后再用 cat -- "$file" 或 head -c 2000 "$file"。'
 
+const bashWrappers = new Set(['time', 'command', 'sudo', 'nohup', 'env'])
+
 function broadGrep(words, piped, pwsh) {
+  const start = pwsh ? 0 : words.findIndex(raw => !/^[a-zA-Z_]\w*=/.test(raw) && !bashWrappers.has(wordValue(raw, false)))
+  const command = words[start]
   const executable = pwsh ? /^(?:.*[\\/])?grep(?:\.exe)?$/i : /^(?:.*\/)?grep$/
-  if (!executable.test(words[0])) return false
+  if (!command || !executable.test(pwsh ? command : wordValue(command, false))) return false
   let recursive = false, pattern = false, options = true
   const paths = []
-  for (let index = 1; index < words.length; index++) {
-    const word = words[index]
+  for (let index = start + 1; index < words.length; index++) {
+    const word = wordValue(words[index], pwsh)
     if (options && word === '--') { options = false; continue }
     if (options && word.startsWith('--')) {
       const [key] = word.split('=')
@@ -37,9 +41,9 @@ function broadGrep(words, piped, pwsh) {
         } else if (!'nIiEFlLwshHvocqa'.includes(flag)) return false
       }
     } else if (!pattern) pattern = true
-    else paths.push(word)
+    else paths.push(words[index])
   }
-  return recursive && ((!paths.length && !piped) || paths.length >= 4 || paths.some(path => isBroadPath(path, pwsh)))
+  return recursive && pattern && ((!paths.length && !piped) || paths.length >= 4 || paths.some(path => isBroadPath(path, pwsh)))
 }
 
 export function guard(execution) {
@@ -50,23 +54,21 @@ export function guard(execution) {
     if (longForegroundSleep(cmd, pwsh)) return waitHint
     if (!pwsh && catMayWaitForStdin(cmd)) return stdinHint
   }
-  if (/[`\r\n]|<<|\$\(|(?:^|\s)#/.test(cmd)) return
-  const unsupported = pwsh ? /[{}()]|<#|@["']/ : /\\/
-  if (unsupported.test(cmd)) return
-  const tokens = cmd.match(/\d*>\s*(?:\/dev\/null|\$null)(?=\s|[;|&]|$)|(?:'[^']*'|"[^"]*"|[^\s;&|'"<>])+|&&|\|\||[;|&]|[^\s]/g) ?? []
+  const tokens = searchTokens(cmd, pwsh)
+  if (!tokens) return
   let words = []
   let piped = false
   let broadListing = false
   for (const token of [...tokens, ';']) {
-    if ([';', '|', '&', '&&', '||'].includes(token)) {
-      while (!pwsh && (['time', 'command', 'sudo', 'nohup', 'env'].includes(words[0]) || /^\w+=/.test(words[0] ?? ''))) words.shift()
+    if ([';', '|', '|&', '&', '&&', '||'].includes(token)) {
       if (broadGrep(words, piped, pwsh)) return searchHint
       if (broadListing && /^(?:Select-String|sls)$/i.test(words[0])) return searchHint
       broadListing = pwsh && !piped && token === '|' && broadPwshListing(words)
-      words = []; piped = token === '|'
-    } else if (!/^\d*>\s*\/dev\/null$/.test(token) && !(pwsh && /^\d*>\s*\$null$/.test(token))) {
-      if (pwsh && words.length === 0) { words.push(token); continue }
-      words.push(token === '"*"' || /^'(?:\*|\$PWD|\$HOME|~)'$/.test(token) ? '<literal>' : token.replace(/['"]/g, ''))
+      words = []; piped = token === '|' || token === '|&'
+    } else if (/^(?:\d*[<>]|&>)/.test(token)) {
+      if (/^0*</.test(token)) piped = true
+    } else {
+      words.push(token)
     }
   }
 }

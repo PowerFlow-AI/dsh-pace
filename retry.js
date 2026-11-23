@@ -1,7 +1,6 @@
-import { isPaceShell } from './shell.js'
+import { isPaceShell, searchTokens, wordValue } from './shell.js'
 
 function bashSearch(command) {
-  if (command.includes('\\')) return
   const prefix = command.match(/^cd\s+([\w./-]+)\s*&&\s*/)
   const body = command.slice(prefix?.[0].length ?? 0).replace(/^command -v rg\s*(?:&&\s*rg --version\s*\|\s*head -1\s*&&|\|\|\s*true;)\s*/, '')
   const match = body.match(/^(?:time\s+)?(?:[\w./-]+\/)?rg\s+(.+)$/)
@@ -16,11 +15,12 @@ function pwshSearch(command) {
 
 function searchKey(exec) {
   const cmd = exec.arguments?.command
-  if (!isPaceShell(exec.name) || !exec.agent?.id || typeof cmd !== 'string' || cmd.length > 4096 || exec.arguments.run_in_background || /[\r\n`$<>]/.test(cmd)) return
+  if (!isPaceShell(exec.name) || !exec.agent?.id || typeof cmd !== 'string' || cmd.length > 4096 || exec.arguments.run_in_background || /[\r\n]/.test(cmd)) return
   const pwsh = exec.name === 'pwsh'
   const search = pwsh ? pwshSearch(cmd.trim()) : bashSearch(cmd.trim())
   if (!search) return
-  const words = search.args.match(/'[^']*'|"[^"]*"|[^\s]+/g) ?? []
+  const words = searchTokens(search.args, pwsh)
+  if (!words) return
   const operands = []
   let options = true
   for (let index = 0; index < words.length; index++) {
@@ -35,12 +35,14 @@ function searchKey(exec) {
     }
     if (options && /^(?:--hidden|-[nFilH]+)$/.test(word)) continue
 
-    const value = word.replace(/^['"]|['"]$/g, '')
+    const value = wordValue(word, pwsh)
+    if (options && value.startsWith('-')) return
     const currentDirectory = pwsh && operands.length === 1 && value === '.\\'
-    if (!currentDirectory) {
-      if (options && value.startsWith('-')) return
-      if (!/^(?:'[\p{L}\p{M}\p{N}_./ :+-]+'|"[\p{L}\p{M}\p{N}_./ :+-]+"|[\p{L}\p{M}\p{N}_./:+-]+)$/u.test(word)) return
-    }
+    // Accept literal regexes while keeping expansions and compound commands out of retry keys.
+    const quoted = pwsh
+      ? /^(?:'(?:[^']|'')*'|"(?:[^"$`]|\$(?="))*")$/.test(word)
+      : /^(?:'[^']*'|"(?:[^"\\$`]|\\.|\$(?="))*")$/.test(word)
+    if (!currentDirectory && !quoted && !/^[\p{L}\p{M}\p{N}_./:+-]+$/u.test(word)) return
     operands.push(currentDirectory ? '.' : value)
   }
   if (!operands.length || operands.length > 2) return
