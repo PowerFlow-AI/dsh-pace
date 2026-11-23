@@ -19,6 +19,51 @@ test('registers via effects and leaves other tools alone', () => {
   assert.equal(guard({ name: 'bash' }), undefined)
 })
 
+test('Bash recognizes broad grep with quoted regexes, options and redirection', () => {
+  for (const command of [
+    String.raw`grep -rn "OSS_ALPHA_BUCKET_NAME\|powerx-backend-files" --include="*.py" . 2>/dev/null | head -50`,
+    String.raw`grep -rn 'A\|B' .`,
+    String.raw`grep -r -E "a\"b\.c" .`,
+    "grep -r ' # $(text) <<end' .",
+    String.raw`printf '%s\n' ready; command /usr/bin/grep -R "a\.b" "$PWD"`,
+    'grep -r key ./*', 'grep -r key /*', 'grep -r key . 2>&1 | head',
+  ]) assert.match(guard({ name: 'bash', arguments: { command } }), /递归搜索/, command)
+})
+
+test('Bash leaves scoped searches, stdin pipelines, literals and incomplete input alone', () => {
+  for (const command of [
+    String.raw`grep -rn "A\|B" src/`, String.raw`grep -n "A\|B" .`,
+    String.raw`printf '%s\n' "x\"; grep -rn key .; echo \"y" | cat`,
+    'printf data |& grep -rn key', 'grep -rn key src lib 2>&1 | head',
+    'echo &>log grep -rn key .',
+    'grep -rn key <input.txt', 'grep -r', 'grep -r key "~"', "grep -r key '$PWD/'",
+    String.raw`grep -r key "\$HOME"`, 'grep -r key "./*"', 'grep -r key "*"',
+    'grep -rn "unclosed .', "grep -rn key .; echo 'unclosed",
+    'grep -rn key .\\', 'grep -rn key .; echo $(date)', 'grep -rn key . # comment',
+    'grep -rn "' + 'x'.repeat(16_384) + '" .',
+  ]) assert.equal(guard({ name: 'bash', arguments: { command } }), undefined, command.slice(0, 100))
+})
+
+test('Bash cat recognizes quoted escapes without interpreting printf text as a command', () => {
+  const check = command => guard({ name: 'bash', arguments: { command } })
+  assert.match(check(String.raw`printf '%s\n' start; cat $(find . -name 'a\b' -print -quit)`), /cat 失去文件参数/)
+  assert.equal(check(String.raw`printf '%s\n' 'cat $(find . -name foo)'`), undefined)
+  assert.equal(check(String.raw`printf '%s\n' data | cat $(find . -name foo)`), undefined)
+})
+
+test('PowerShell distinguishes regex and wildcard arguments from shell syntax', () => {
+  const check = command => guard({ name: 'pwsh', arguments: { command } })
+  for (const command of [
+    "grep.exe -rn '(a|b)\\.js' .\\",
+    'gci -Recurse | Select-String "a(b)"',
+    'gci -Path "*" -Recurse | sls needle',
+  ]) assert.match(check(command), /递归搜索/, command)
+  for (const command of [
+    "Write-Output 'it''s text; grep -rn key .'", 'grep -r "unclosed .',
+    'grep -rn key "*"', 'gci -LiteralPath "*" -Recurse | sls needle',
+  ]) assert.equal(check(command), undefined, command)
+})
+
 test('Bash guards the full Ollama command when cat could inherit terminal input', () => {
   const command = 'ls -la ~/.ollama/models/blobs | head -30; echo; echo "=== manifest ==="; find ~/.ollama/models/manifests -type f | head; echo; cat $(find ~/.ollama/models/manifests -type f | head -1) | head -c 2000'
   const exec = { name: 'bash', arguments: { command } }
@@ -128,6 +173,23 @@ test('pwsh slow searches use the foreground session, directory, keyword and expi
 })
 
 for (const name of ['bash', 'pwsh']) {
+  test(`${name}: only retries the same slow, statically quoted regex`, () => {
+    const retry = createRetryPolicy()
+    const exec = command => ({ name, arguments: { command }, agent: { id: 'one' } })
+    const first = exec(String.raw`rg -n "a\.b|c$" .`)
+    assert.equal(retry.guard(first), undefined)
+    retry.observe(first, 60_000, false)
+    assert.ok(retry.guard(exec(String.raw`rg 'a\.b|c$' ./`)))
+    for (const command of [
+      String.raw`rg 'a.b|c$' .`, String.raw`rg 'a\.b|c$' src/`,
+      String.raw`rg -g '*.js' 'a\.b|c$' .`, String.raw`rg 'a\.b|c$' .; echo ok`,
+      String.raw`rg 'a\.b|c$' . "`,
+    ]) assert.equal(retry.guard(exec(command)), undefined, command)
+    const dynamic = exec('rg "$pattern" .')
+    retry.observe(dynamic, 60_000, false)
+    assert.equal(retry.guard(dynamic), undefined)
+  })
+
   test(`${name}: slow rg retries recognize Unicode keywords and the end of options`, () => {
     const retry = createRetryPolicy()
     const exec = command => ({ name, arguments: { command }, agent: { id: 'one' } })

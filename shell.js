@@ -2,23 +2,61 @@ export function isPaceShell(name) {
   return name === 'bash' || name === 'pwsh'
 }
 
-const doubleQuotedWord = String.raw`"(?:[^"$]|\$(?!\())*"`
-const findSubstitution = String.raw`\$\([ \t]*(?:/usr/bin/)?find[ \t]+(?:[^(){}'";&]|'[^']*'|${doubleQuotedWord})*\)`
+// Match complete raw words so callers can distinguish quoted data from operators.
+const singleQuoted = /'[^']*'/.source
+const doubleQuoted = /"(?:[^"$\\`]|\\.|\$(?![({\[]))*"/.source
+const bare = /[^\s;&|(){}<>'"$\\`]|\$(?![('"{\[])/.source
+const bashWord = `(?:${singleQuoted}|${doubleQuoted}|${bare})+`
+const findSubstitution = String.raw`\$\([ \t]*(?:/usr/bin/)?find[ \t](?:[^(){}'";&#\\\x60]|${singleQuoted}|${doubleQuoted})*\)`
 const findOperand = new RegExp(`^${findSubstitution}$`)
-const simpleBashToken = new RegExp(String.raw`[ \t]+|&&|\|\||\|&|[;|&]|(?:${findSubstitution}|'[^']*'|${doubleQuotedWord}|[^\s;&|(){}<>'"$]+|\$(?!\())+`, 'gy')
+const separators = /[ \t]+|&&|\|\||\|&|[;|&]/.source
+const redirect = String.raw`(?:&>>?|\d*(?:>>?|<)&?)[ \t]*(?!#)${bashWord}`
+const searchToken = new RegExp(`${redirect}|${separators}|${bashWord}`, 'gy')
+const catToken = new RegExp(`${separators}|(?:${findSubstitution}|${singleQuoted}|${doubleQuoted}|${bare})+`, 'gy')
+
+// PowerShell paths use backslashes. Only ordinary quoted strings and simple commands are recognized.
+const pwshDoubleQuoted = /"(?:[^"$`]|\$(?![({]))*"/.source
+const pwshBare = /[^\s;&|(){}<>'"$@`]|\$(?![({])|@(?!['"])/.source
+const pwshWord = `(?:${singleQuoted}|${pwshDoubleQuoted}|${pwshBare})+`
+const pwshToken = new RegExp(String.raw`\d*>>?&?[ \t]*(?!#)${pwshWord}|[ \t]+|&&|\|\||[;|&]|${pwshWord}`, 'gy')
+
+function tokenize(command, tokenPattern) {
+  if (command.length > 16_384 || /[\r\n]/.test(command)) return
+  const tokens = []
+  let end = 0
+  for (const [raw] of command.matchAll(tokenPattern)) {
+    if (raw.startsWith('#')) return
+    end += raw.length
+    if (!/^[ \t]/.test(raw)) tokens.push(raw)
+  }
+  if (end === command.length) return tokens
+}
+
+export function searchTokens(command, pwsh) {
+  if (pwsh && /[‘’‚‛“”„‟]/.test(command)) return
+  return tokenize(command, pwsh ? pwshToken : searchToken)
+}
+
+export function wordValue(raw, pwsh) {
+  if (pwsh) return raw.replace(/'((?:[^']|'')*)'|"((?:[^"]|"")*)"/g, (_, single, double) =>
+    single === undefined ? double.replaceAll('""', '"') : single.replaceAll("''", "'"))
+  // Bash only consumes a backslash inside double quotes before these characters.
+  return raw.replace(/'([^']*)'|"((?:[^"\\]|\\.)*)"/g, (_, single, double) =>
+    single ?? double.replace(/\\(["\\$`])/g, '$1'))
+}
+
 const compoundCommand = /^(?:if|then|elif|else|fi|for|select|while|until|do|done|case|esac|function|coproc|time|!|\[\[)$/
 
 // Recognize simple command lists only, with command substitutions kept as single words.
 export function catMayWaitForStdin(command) {
-  if (!command.includes('$(') || !command.includes('cat') || /[\\`#\r\n]/.test(command)) return false
+  if (!command.includes('$(') || !command.includes('cat')) return false
+  const tokens = tokenize(command, catToken)
+  if (!tokens) return false
 
-  let end = 0
   let piped = false
   let mayWait = false
   let words = []
-  for (const [token] of `${command};`.matchAll(simpleBashToken)) {
-    end += token.length
-    if (/^[ \t]/.test(token)) continue
+  for (const token of [...tokens, ';']) {
     if (['&&', '||', '&'].includes(token)) return false
     if (![';', '|', '|&'].includes(token)) {
       words.push(token)
@@ -34,13 +72,19 @@ export function catMayWaitForStdin(command) {
     piped = token !== ';'
     words = []
   }
-  return end === command.length + 1 && mayWait
+  return mayWait
 }
 
-export function isBroadPath(path, pwsh) {
-  if (pwsh) path = path.replaceAll('\\', '/')
-  return /^(?:\.|\.\.|~|\$PWD|\$HOME|\*)\/?$/.test(path) || path === '/' ||
-    (pwsh && /^(?:[a-z]:\/|\.\/\*)$/i.test(path))
+export function isBroadPath(raw, pwsh, expandWildcards) {
+  const value = wordValue(raw, pwsh)
+  const path = pwsh ? value.replaceAll('\\', '/') : value
+  if (path === '/' || /^\.{1,2}\/?$/.test(path)) return true
+  if (pwsh && /^[a-z]:\/$/i.test(path)) return true
+  if (/^~\/?$/.test(path)) return pwsh || raw.startsWith('~')
+  if (/^\$(?:PWD|HOME)\/?$/.test(path)) return /^"?\$(?:PWD|HOME)\b/.test(raw)
+  if (!/^(?:\.?\/)?\*\/?$/.test(path)) return false
+  // PowerShell providers expand wildcard paths even in quotes, except with -LiteralPath.
+  return expandWildcards ?? /\*[\\/]?$/.test(raw)
 }
 
 export function longForegroundSleep(command, pwsh) {
@@ -63,8 +107,9 @@ export function broadPwshListing([cmd, ...args]) {
   for (let i = 0; i < args.length; i++) {
     if (/^-Recurse$/i.test(args[i])) recursive = true
     else if (!/^-(?:File|Force)$/i.test(args[i])) {
-      if (/^-(?:Literal)?Path$/i.test(args[i])) i++
-      if (!args[i] || !isBroadPath(args[i], true)) return false
+      const literalPath = /^-LiteralPath$/i.test(args[i])
+      if (literalPath || /^-Path$/i.test(args[i])) i++
+      if (!args[i] || !isBroadPath(args[i], true, !literalPath)) return false
     }
   }
   return recursive
